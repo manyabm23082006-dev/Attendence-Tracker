@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Attendly — Attendance Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          bg: '#0A0C10',
+          surface: '#12161D',
+          surface2: '#171C25',
+          brdr: '#232935',
+          ink: '#E9ECF2',
+          dim: '#8B93A6',
+          faint: '#5B6376',
+          mint: '#5FE3A1',
+          amber: '#F3B65E',
+          coral: '#F1706B',
+          slate: '#4B5563',
+          lbg: '#F6F7F9',
+          lsurface: '#FFFFFF',
+          lsurface2: '#F0F1F4',
+          lbrdr: '#E3E5EA',
+          link: '#12151A',
+          ldim: '#6B7280',
+        },
+        fontFamily: {
+          display: ['"Space Grotesk"', 'sans-serif'],
+          sans: ['"Inter"', 'sans-serif'],
+        },
+        boxShadow: {
+          soft: '0 1px 2px rgba(0,0,0,0.4)',
+        }
+      }
+    }
+  }
+</script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+  html, body { background: #0A0C10; }
+  * { -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Inter', sans-serif; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #232935; border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  .num { font-family: 'Space Grotesk', sans-serif; font-feature-settings: "tnum"; }
+  @keyframes riseIn { from { opacity: 0; transform: translateY(6px);} to {opacity:1; transform: translateY(0);} }
+  .rise { animation: riseIn .35s ease both; }
+  @keyframes popIn { from { opacity:0; transform: scale(.97);} to {opacity:1; transform:scale(1);} }
+  .pop { animation: popIn .18s ease both; }
+  @keyframes ringDraw { from { stroke-dashoffset: var(--ring-full); } to { stroke-dashoffset: var(--ring-offset); } }
+  .ring-anim { animation: ringDraw 1s cubic-bezier(.2,.8,.2,1) both; }
+  input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid #5FE3A1; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .rise, .pop, .ring-anim { animation: none !important; }
+  }
+  .scrollbar-none::-webkit-scrollbar{ display:none; }
+  .scrollbar-none{ -ms-overflow-style:none; scrollbar-width:none; }
+
+  /* Light theme overrides */
+  html.theme-light body { background:#F6F7F9 !important; }
+  html.theme-light .bg-bg { background-color:#F6F7F9 !important; }
+  html.theme-light .bg-surface { background-color:#FFFFFF !important; }
+  html.theme-light .bg-surface2 { background-color:#EFF1F4 !important; }
+  html.theme-light .border-brdr { border-color:#E3E5EA !important; }
+  html.theme-light .text-ink { color:#14171C !important; }
+  html.theme-light .text-dim { color:#5B6472 !important; }
+  html.theme-light .text-faint { color:#8B93A2 !important; }
+  html.theme-light ::-webkit-scrollbar-thumb { background:#E3E5EA; }
+</style>
+</head>
+<body class="bg-bg text-ink">
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useRef, createContext, useContext, useReducer } = React;
+const { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } = Recharts;
+
+/* ============================== ICONS ============================== */
+function Icon({ name, size = 20, className = "", strokeWidth = 1.8 }) {
+  const common = { viewBox: "0 0 24 24", width: size, height: size, fill: "none", stroke: "currentColor", strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", className };
+  switch (name) {
+    case "home": return <svg {...common}><path d="M3.5 10.5 12 4l8.5 6.5"/><path d="M5.5 9.5V20h13V9.5"/><path d="M9.5 20v-6h5v6"/></svg>;
+    case "check-square": return <svg {...common}><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.3 2.3L16 9.5"/></svg>;
+    case "grid": return <svg {...common}><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>;
+    case "bar": return <svg {...common}><path d="M5 20V11"/><path d="M12 20V4"/><path d="M19 20v-7"/></svg>;
+    case "gear": return <svg {...common}><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2.4M12 18.1v2.4M4.9 6.9l1.7 1.7M17.4 15.4l1.7 1.7M3.5 12h2.4M18.1 12h2.4M4.9 17.1l1.7-1.7M17.4 8.6l1.7-1.7"/></svg>;
+    case "plus": return <svg {...common}><path d="M12 5v14M5 12h14"/></svg>;
+    case "check": return <svg {...common}><path d="M5 12.5l4.5 4.5L19 7"/></svg>;
+    case "x": return <svg {...common}><path d="M6 6l12 12M18 6L6 18"/></svg>;
+    case "chev-left": return <svg {...common}><path d="M15 5l-7 7 7 7"/></svg>;
+    case "chev-right": return <svg {...common}><path d="M9 5l7 7-7 7"/></svg>;
+    case "arrow-left": return <svg {...common}><path d="M19 12H5M11 6l-6 6 6 6"/></svg>;
+    case "edit": return <svg {...common}><path d="M4 20l4-1 11-11-3-3L5 16l-1 4z"/></svg>;
+    case "trash": return <svg {...common}><path d="M5 7h14M9 7V5h6v2M6.5 7l1 12.5h9L17.5 7"/></svg>;
+    case "download": return <svg {...common}><path d="M12 4v11M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>;
+    case "upload": return <svg {...common}><path d="M12 20V9M8 13l4-4 4 4"/><path d="M5 19h14"/></svg>;
+    case "refresh": return <svg {...common}><path d="M4.5 12a7.5 7.5 0 0 1 12.6-5.4L19 8.5"/><path d="M19.5 12a7.5 7.5 0 0 1-12.6 5.4L5 15.5"/><path d="M19 5.5v3h-3M5 18.5v-3h3"/></svg>;
+    case "clock": return <svg {...common}><circle cx="12" cy="12" r="8.2"/><path d="M12 7.5V12l3 2"/></svg>;
+    case "pin": return <svg {...common}><path d="M12 21s-6.5-5.7-6.5-11A6.5 6.5 0 0 1 18.5 10c0 5.3-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.2"/></svg>;
+    case "trend": return <svg {...common}><path d="M4 16l5.5-6 4 3.2L20 6"/><path d="M15 6h5v5"/></svg>;
+    case "alert": return <svg {...common}><path d="M12 4.5 21 19H3z"/><path d="M12 10v4"/><circle cx="12" cy="16.7" r=".4" fill="currentColor"/></svg>;
+    case "check-circle": return <svg {...common}><circle cx="12" cy="12" r="8.2"/><path d="M8.3 12.3l2.4 2.4 5-5.4"/></svg>;
+    case "x-circle": return <svg {...common}><circle cx="12" cy="12" r="8.2"/><path d="M9.5 9.5l5 5m0-5-5 5"/></svg>;
+    case "minus-circle": return <svg {...common}><circle cx="12" cy="12" r="8.2"/><path d="M8.3 12h7.4"/></svg>;
+    case "book": return <svg {...common}><path d="M4.5 5.2A2 2 0 0 1 6.4 4H12v16H6.4A2 2 0 0 0 4.5 21z"/><path d="M19.5 5.2A2 2 0 0 0 17.6 4H12v16h5.6a2 2 0 0 1 1.9 1.4z"/></svg>;
+    case "flame": return <svg {...common}><path d="M12 3s5 4.2 5 9a5 5 0 0 1-10 0c0-1.4.7-2.4 1.4-3.3.3.9 1 1.4 1.6 1.2C9.4 8 9 6 12 3z"/></svg>;
+    case "calendar": return <svg {...common}><rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3.5v3M16 3.5v3"/></svg>;
+    case "sun": return <svg {...common}><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>;
+    case "moon": return <svg {...common}><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5z"/></svg>;
+    case "info": return <svg {...common}><circle cx="12" cy="12" r="8.2"/><path d="M12 11v5.2M12 8v.1"/></svg>;
+    default: return null;
+  }
+}
+
+/* ============================== DATE HELPERS ============================== */
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAY_NAMES_LONG = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DAY_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function pad2(n){ return n < 10 ? "0"+n : ""+n; }
+function toISO(d){ return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function fromISO(s){ const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); }
+function todayISO(){ return toISO(new Date()); }
+function addDays(iso, n){ const d = fromISO(iso); d.setDate(d.getDate()+n); return toISO(d); }
+function dayOfWeekName(iso){ return DAY_NAMES_LONG[fromISO(iso).getDay()]; }
+function fmtLong(iso){ const d = fromISO(iso); return MONTH_NAMES[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear(); }
+function fmtShort(iso){ const d = fromISO(iso); return MONTH_NAMES[d.getMonth()].slice(0,3) + " " + d.getDate(); }
+function greetingWord(){ const h = new Date().getHours(); if (h < 12) return "Good Morning"; if (h < 17) return "Good Afternoon"; return "Good Evening"; }
+function daysInMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
+function uid(){ return Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4); }
+
+/* ============================== CALCULATION ENGINE ============================== */
+function computeStats(records) {
+  let present = 0, absent = 0, noClass = 0;
+  for (const r of records) {
+    if (r.status === "present") present++;
+    else if (r.status === "absent") absent++;
+    else noClass++;
+  }
+  const total = present + absent;
+  const percentage = total > 0 ? Math.round((present / total) * 1000) / 10 : 0;
+  return { present, absent, noClass, total, percentage };
+}
+function getStatus(stats, target) {
+  if (stats.total === 0) return "nodata";
+  if (stats.percentage >= target) return "safe";
+  if (stats.percentage >= Math.max(target - 12, 0)) return "risky";
+  return "critical";
+}
+const STATUS_COLOR = { safe: "mint", risky: "amber", critical: "coral", nodata: "slate" };
+const STATUS_HEX = { safe: "#5FE3A1", risky: "#F3B65E", critical: "#F1706B", nodata: "#4B5563" };
+const STATUS_LABEL = { safe: "On Target", risky: "Risky", critical: "Critical", nodata: "No Data" };
+
+function safeToMiss(present, total, target) {
+  if (total === 0 || target <= 0) return 0;
+  const t = target / 100;
+  let n = Math.floor(present / t - total);
+  if (n < 0) n = 0;
+  while (present / (total + n + 1) >= t) n++;
+  while (n > 0 && present / (total + n) < t) n--;
+  return n;
+}
+function neededToAttend(present, total, target) {
+  const t = target / 100;
+  if (t >= 1) return total === present ? 0 : Infinity;
+  if (total > 0 && present / total >= t) return 0;
+  let n = Math.ceil((t * total - present) / (1 - t));
+  if (n < 0) n = 0;
+  while (total + n > 0 && (present + n) / (total + n) < t) n++;
+  return n;
+}
+function insightMessage(stats, target) {
+  if (stats.total === 0) return "No classes recorded yet. Mark today's attendance to get started.";
+  if (stats.percentage >= target) {
+    const n = safeToMiss(stats.present, stats.total, target);
+    return `Your attendance is ${stats.percentage}%. You're comfortably above your ${target}% target` + (n > 0 ? `, and can miss ${n} upcoming class${n===1?"":"es"} and stay safe.` : `, but you're right at the edge — one more absence could put you at risk.`);
+  }
+  const n = neededToAttend(stats.present, stats.total, target);
+  return `Your attendance is ${stats.percentage}%, below your ${target}% target. Attend the next ${n} class${n===1?"":"es"} in a row to recover.`;
+}
+
+/* ============================== STORAGE ============================== */
+const LS_KEY = "attendly_state_v1";
+function loadState() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) { return null; }
+}
+function persist(state) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+const DEFAULT_SETTINGS = {
+  theme: "dark",
+  defaultTarget: 75,
+  academicYear: "2026 - 2027",
+  reminders: true,
+  lowAttendanceAlerts: true,
+};
+
+function emptyState() {
+  return { subjects: [], records: [], timetable: [], settings: { ...DEFAULT_SETTINGS }, hasDemo: false };
+}
+
+/* ============================== DEMO DATA ============================== */
+const PALETTE = ["#5FE3A1","#7BA8F5","#F3B65E","#F1706B","#C792F0","#5ED1E0","#F09E5E","#8FE35F"];
+function generateDemoData() {
+  const defs = [
+    { name: "Physics", code: "PHY201", faculty: "Dr. Rao", target: 75, perWeek: 4, bias: 0.86 },
+    { name: "Chemistry", code: "CHM204", faculty: "Dr. Iyer", target: 75, perWeek: 3, bias: 0.63 },
+    { name: "Mathematics", code: "MTH210", faculty: "Prof. Nair", target: 75, perWeek: 5, bias: 0.79 },
+    { name: "English", code: "ENG110", faculty: "Ms. Fernandes", target: 70, perWeek: 2, bias: 0.9 },
+    { name: "Data Structures", code: "CSE221", faculty: "Dr. Verma", target: 80, perWeek: 4, bias: 0.71 },
+    { name: "Database Mgmt Systems", code: "CSE231", faculty: "Prof. Shah", target: 75, perWeek: 3, bias: 0.58 },
+  ];
+  const subjects = defs.map((d, i) => ({
+    id: uid(), name: d.name, code: d.code, faculty: d.faculty,
+    targetPercentage: d.target, classesPerWeek: d.perWeek, color: PALETTE[i % PALETTE.length],
+    createdAt: new Date().toISOString(),
+  }));
+  const records = [];
+  const today = new Date();
+  const start = new Date(today); start.setDate(start.getDate() - 75);
+  const weekDayMap = { Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [] };
+  const dayKeys = Object.keys(weekDayMap);
+  subjects.forEach((s, si) => {
+    const def = defs[si];
+    for (let i = 0; i < def.perWeek; i++) {
+      dayKeys[(si + i) % 5] && weekDayMap[dayKeys[(si + i) % 5]].push(s.id);
+    }
+  });
+  const timetable = [];
+  const slots = ["08:00-09:00","09:00-10:00","10:15-11:15","11:15-12:15","13:15-14:15","14:15-15:15"];
+  const rooms = ["Room 101","Room 204","Lab 3","Room 310","Room 118","Lab 1"];
+  dayKeys.forEach((day) => {
+    let slotIdx = 0;
+    weekDayMap[day].forEach((subjId) => {
+      const [st, et] = slots[slotIdx % slots.length].split("-");
+      timetable.push({ id: uid(), subjectId: subjId, day, startTime: st, endTime: et, room: rooms[slotIdx % rooms.length] });
+      slotIdx++;
+    });
+  });
+  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+    const dayName = DAY_NAMES_LONG[d.getDay()];
+    const iso = toISO(d);
+    if (!weekDayMap[dayName]) continue;
+    weekDayMap[dayName].forEach((subjId) => {
+      const def = defs[subjects.findIndex(s => s.id === subjId)];
+      const roll = Math.random();
+      const status = roll < 0.03 ? "no-class" : (roll < def.bias + 0.03 ? "present" : "absent");
+      records.push({ id: uid(), subjectId: subjId, date: iso, status, notes: "" });
+    });
+  }
+  return { subjects, records, timetable };
+}
+
+/* ============================== CONTEXT / REDUCER ============================== */
+const Store = createContext(null);
+function useStore(){ return useContext(Store); }
+
+function reducer(state, action) {
+  switch (action.type) {
+    case "ADD_SUBJECT": return { ...state, subjects: [...state.subjects, action.payload] };
+    case "UPDATE_SUBJECT": return { ...state, subjects: state.subjects.map(s => s.id === action.payload.id ? { ...s, ...action.payload } : s) };
+    case "DELETE_SUBJECT": return {
+      ...state,
+      subjects: state.subjects.filter(s => s.id !== action.payload),
+      records: state.records.filter(r => r.subjectId !== action.payload),
+      timetable: state.timetable.filter(t => t.subjectId !== action.payload),
+    };
+    case "MARK_ATTENDANCE": {
+      const { subjectId, date, status, notes } = action.payload;
+      const idx = state.records.findIndex(r => r.subjectId === subjectId && r.date === date);
+      if (idx >= 0) {
+        const copy = state.records.slice();
+        copy[idx] = { ...copy[idx], status, notes: notes ?? copy[idx].notes };
+        return { ...state, records: copy };
+      }
+      return { ...state, records: [...state.records, { id: uid(), subjectId, date, status, notes: notes || "" }] };
+    }
+    case "DELETE_RECORD": return { ...state, records: state.records.filter(r => r.id !== action.payload) };
+    case "ADD_TIMETABLE": return { ...state, timetable: [...state.timetable, action.payload] };
+    case "UPDATE_TIMETABLE": return { ...state, timetable: state.timetable.map(t => t.id === action.payload.id ? { ...t, ...action.payload } : t) };
+    case "DELETE_TIMETABLE": return { ...state, timetable: state.timetable.filter(t => t.id !== action.payload) };
+    case "UPDATE_SETTINGS": return { ...state, settings: { ...state.settings, ...action.payload } };
+    case "LOAD_DEMO": { const demo = generateDemoData(); return { ...state, ...demo, hasDemo: true }; }
+    case "CLEAR_DEMO": return { ...emptyState(), settings: state.settings, hasDemo: false };
+    case "RESET_ALL": return emptyState();
+    case "IMPORT": return { ...emptyState(), ...action.payload };
+    default: return state;
+  }
+}
+
+/* ============================== SMALL UI PRIMITIVES ============================== */
+function ProgressBar({ value, colorVar = "mint", track = "surface2" }) {
+  const pct = Math.max(0, Math.min(100, value));
+  return (
+    <div className={`h-2 w-full rounded-full bg-${track} overflow-hidden`}>
+      <div className={`h-full rounded-full bg-${colorVar} transition-all duration-500`} style={{ width: pct + "%" }} />
+    </div>
+  );
+}
+function ProgressRing({ value, size = 156, stroke = 12, color = "#5FE3A1", trackColor = "#1C212B", children }) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const offset = c - (Math.max(0, Math.min(100, value)) / 100) * c;
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size/2} cy={size/2} r={r} stroke={trackColor} strokeWidth={stroke} fill="none" />
+        <circle cx={size/2} cy={size/2} r={r} stroke={color} strokeWidth={stroke} fill="none"
+          strokeLinecap="round" strokeDasharray={c} strokeDashoffset={offset}
+          className="ring-anim" style={{ ["--ring-full"]: c, ["--ring-offset"]: offset }} />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">{children}</div>
+    </div>
+  );
+}
+function StatusPill({ status, size = "sm" }) {
+  const color = STATUS_COLOR[status];
+  const label = STATUS_LABEL[status];
+  const icon = status === "safe" ? "check-circle" : status === "risky" ? "alert" : status === "critical" ? "x-circle" : "minus-circle";
+  const pad = size === "sm" ? "px-2 py-0.5 text-xs" : "px-3 py-1 text-sm";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full bg-${color}/10 text-${color} ${pad} font-medium`}>
+      <Icon name={icon} size={size === "sm" ? 13 : 15} /> {label}
+    </span>
+  );
+}
+function EmptyState({ icon = "book", title, subtitle, action }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-16 px-6 rise">
+      <div className="w-16 h-16 rounded-2xl bg-surface2 flex items-center justify-center mb-4 text-dim">
+        <Icon name={icon} size={30} />
+      </div>
+      <div className="font-display font-semibold text-lg mb-1">{title}</div>
+      <div className="text-dim text-sm max-w-xs mb-5">{subtitle}</div>
+      {action}
+    </div>
+  );
+}
+function Button({ children, variant = "primary", className = "", ...props }) {
+  const base = "inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-medium transition active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none";
+  const variants = {
+    primary: "bg-mint text-[#06140D] hover:brightness-95",
+    secondary: "bg-surface2 text-ink border border-brdr hover:bg-surface2/70",
+    danger: "bg-coral/15 text-coral hover:bg-coral/25",
+    ghost: "text-dim hover:text-ink hover:bg-surface2",
+  };
+  return <button className={`${base} ${variants[variant]} ${className}`} {...props}>{children}</button>;
+}
+function Field({ label, children, required }) {
+  return (
+    <label className="block mb-4">
+      <span className="block text-sm text-dim mb-1.5">{label}{required && <span className="text-coral"> *</span>}</span>
+      {children}
+    </label>
+  );
+}
+const inputCls = "w-full rounded-xl bg-surface2 border border-brdr px-3.5 py-2.5 text-sm text-ink placeholder:text-faint focus:border-mint";
+
+function Modal({ open, onClose, title, children, wide }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className={`pop bg-surface w-full ${wide ? "sm:max-w-lg" : "sm:max-w-md"} sm:rounded-2xl rounded-t-2xl max-h-[88vh] overflow-y-auto border border-brdr`}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-brdr sticky top-0 bg-surface z-10">
+          <h3 className="font-display font-semibold text-base">{title}</h3>
+          <button onClick={onClose} className="text-dim hover:text-ink p-1"><Icon name="x" size={20} /></button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+function ConfirmDialog({ open, onCancel, onConfirm, title, body, confirmLabel = "Confirm", danger }) {
+  return (
+    <Modal open={open} onClose={onCancel} title={title}>
+      <p className="text-sm text-dim mb-5">{body}</p>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button variant={danger ? "danger" : "primary"} onClick={onConfirm}>{confirmLabel}</Button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ============================== SHELL / NAV ============================== */
+const NAV_ITEMS = [
+  { key: "dashboard", label: "Dashboard", icon: "home" },
+  { key: "attendance", label: "Attendance", icon: "check-square" },
+  { key: "timetable", label: "Timetable", icon: "grid" },
+  { key: "analytics", label: "Analytics", icon: "bar" },
+  { key: "settings", label: "Settings", icon: "gear" },
+];
+function BottomNav({ page, setPage }) {
+  return (
+    <nav className="fixed bottom-0 left-0 right-0 z-30 sm:hidden bg-surface/95 backdrop-blur border-t border-brdr pb-[env(safe-area-inset-bottom)]">
+      <div className="flex">
+        {NAV_ITEMS.map(item => (
+          <button key={item.key} onClick={() => setPage(item.key)}
+            className={`flex-1 flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium ${page === item.key ? "text-mint" : "text-faint"}`}>
+            <Icon name={item.icon} size={21} />
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+function Sidebar({ page, setPage }) {
+  return (
+    <aside className="hidden sm:flex flex-col w-60 shrink-0 border-r border-brdr min-h-screen px-4 py-6 fixed left-0 top-0 bottom-0">
+      <div className="flex items-center gap-2 px-2 mb-8">
+        <div className="w-8 h-8 rounded-lg bg-mint flex items-center justify-center text-[#06140D] font-display font-bold">A</div>
+        <span className="font-display font-semibold text-lg">Attendly</span>
+      </div>
+      <div className="flex flex-col gap-1">
+        {NAV_ITEMS.map(item => (
+          <button key={item.key} onClick={() => setPage(item.key)}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${page === item.key ? "bg-mint/10 text-mint" : "text-dim hover:bg-surface2 hover:text-ink"}`}>
+            <Icon name={item.icon} size={19} /> {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-auto px-2 text-xs text-faint">Local-first · your data stays on this device</div>
+    </aside>
+  );
+}
+
+/* ============================== DASHBOARD ============================== */
+function useSubjectStats(subjectId, records, target) {
+  return useMemo(() => {
+    const recs = records.filter(r => r.subjectId === subjectId);
+    const stats = computeStats(recs);
+    const status = getStatus(stats, target);
+    return { stats, status, recs };
+  }, [subjectId, records, target]);
+}
+
+function SubjectCard({ subject, records, onClick }) {
+  const { stats, status } = useSubjectStats(subject.id, records, subject.targetPercentage);
+  const color = STATUS_COLOR[status];
+  const helper = status === "nodata" ? "No classes recorded yet"
+    : status === "safe" ? `You can miss ${safeToMiss(stats.present, stats.total, subject.targetPercentage)} class${safeToMiss(stats.present, stats.total, subject.targetPercentage)===1?"":"es"}`
+    : `Need ${neededToAttend(stats.present, stats.total, subject.targetPercentage)} more class${neededToAttend(stats.present, stats.total, subject.targetPercentage)===1?"":"es"}`;
+  return (
+    <button onClick={onClick} className="rise text-left bg-surface border border-brdr rounded-2xl p-4 hover:border-faint transition w-full">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-2.5">
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: subject.color }} />
+          <div>
+            <div className="font-semibold text-sm leading-tight">{subject.name}</div>
+            {subject.code && <div className="text-xs text-faint">{subject.code}</div>}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className={`num text-xl font-semibold text-${color}`}>{stats.percentage}%</div>
+        </div>
+      </div>
+      <ProgressBar value={stats.percentage} colorVar={color} />
+      <div className="flex items-center justify-between mt-2.5 text-xs text-dim">
+        <span>{stats.present}P · {stats.absent}A · {stats.total} total</span>
+        <StatusPill status={status} />
+      </div>
+      <div className="text-xs text-faint mt-2">{helper}</div>
+    </button>
+  );
+}
+
+function TodayClassCard({ item, records, dispatch }) {
+  const rec = records.find(r => r.subjectId === item.subjectId && r.date === todayISO());
+  const mark = (status) => dispatch({ type: "MARK_ATTENDANCE", payload: { subjectId: item.subjectId, date: todayISO(), status } });
+  return (
+    <div className="rise flex items-center justify-between bg-surface border border-brdr rounded-2xl px-4 py-3">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: item.subjectColor + "22", color: item.subjectColor }}>
+          <Icon name="clock" size={18} />
+        </div>
+        <div className="min-w-0">
+          <div className="font-medium text-sm truncate">{item.subjectName}</div>
+          <div className="text-xs text-faint">{item.startTime} – {item.endTime}{item.room ? " · " + item.room : ""}</div>
+        </div>
+      </div>
+      {rec ? (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <StatusPill status={rec.status === "present" ? "safe" : rec.status === "absent" ? "critical" : "nodata"} />
+          <button onClick={() => mark(rec.status === "present" ? "absent" : "present")} className="text-faint hover:text-ink p-1.5"><Icon name="refresh" size={15} /></button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button onClick={() => mark("present")} className="flex items-center gap-1 rounded-lg bg-mint/15 text-mint px-2.5 py-1.5 text-xs font-medium hover:bg-mint/25"><Icon name="check" size={13}/>Present</button>
+          <button onClick={() => mark("absent")} className="flex items-center gap-1 rounded-lg bg-coral/15 text-coral px-2.5 py-1.5 text-xs font-medium hover:bg-coral/25"><Icon name="x" size={13}/>Absent</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Dashboard({ openSubject, setAddOpen }) {
+  const { state, dispatch } = useStore();
+  const { subjects, records, timetable, settings } = state;
+  const overall = useMemo(() => computeStats(records), [records]);
+  const overallStatus = getStatus(overall, settings.defaultTarget);
+  const todayName = dayOfWeekName(todayISO());
+  const todayItems = useMemo(() => timetable
+    .filter(t => t.day === todayName)
+    .map(t => ({ ...t, subjectName: subjects.find(s => s.id === t.subjectId)?.name || "—", subjectColor: subjects.find(s => s.id === t.subjectId)?.color || "#5FE3A1" }))
+    .sort((a,b) => a.startTime.localeCompare(b.startTime)), [timetable, subjects, todayName]);
+
+  const belowTarget = subjects.filter(s => { const st = computeStats(records.filter(r => r.subjectId === s.id)); return getStatus(st, s.targetPercentage) !== "safe" && st.total > 0; });
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-24 sm:pb-10">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <div className="font-display text-xl font-semibold">{greetingWord()} 👋</div>
+          <div className="text-dim text-sm mt-0.5">Your attendance overview</div>
+        </div>
+        <div className="hidden sm:block">
+          <Button onClick={() => setAddOpen(true)}><Icon name="plus" size={16}/>Add Subject</Button>
+        </div>
+      </div>
+
+      {subjects.length === 0 ? (
+        <div className="bg-surface border border-brdr rounded-2xl">
+          <EmptyState icon="book" title="No subjects yet"
+            subtitle="Add your first subject to start tracking attendance, or load demo data to explore Attendly."
+            action={
+              <div className="flex gap-2">
+                <Button onClick={() => setAddOpen(true)}><Icon name="plus" size={15}/>Add Subject</Button>
+                <Button variant="secondary" onClick={() => dispatch({ type: "LOAD_DEMO" })}>Load Demo Data</Button>
+              </div>
+            } />
+        </div>
+      ) : (
+        <React.Fragment>
+          {/* HERO */}
+          <div className="rise bg-surface border border-brdr rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-8 mb-6">
+            <ProgressRing value={overall.percentage} color={STATUS_HEX[overallStatus]}>
+              <div className="text-center">
+                <div className="num text-4xl font-bold">{overall.percentage}%</div>
+                <div className="text-xs text-faint mt-0.5">Overall</div>
+              </div>
+            </ProgressRing>
+            <div className="flex-1 w-full">
+              <div className="text-dim text-sm mb-1">Overall Attendance</div>
+              <div className="num text-2xl font-semibold mb-1">{overall.present} / {overall.total} classes attended</div>
+              <ProgressBar value={overall.percentage} colorVar={STATUS_COLOR[overallStatus]} />
+              <div className="flex items-center justify-between mt-2 text-xs text-dim">
+                <span>Target: {settings.defaultTarget}%</span>
+                <span className={`text-${STATUS_COLOR[overallStatus]} font-medium`}>
+                  {overall.total === 0 ? "No data yet" : overall.percentage >= settings.defaultTarget
+                    ? `Above target by ${Math.round((overall.percentage - settings.defaultTarget)*10)/10}%`
+                    : `Below target by ${Math.round((settings.defaultTarget - overall.percentage)*10)/10}%`}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* STAT TILES */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            {[
+              { label: "Total Classes", value: overall.total, color: "ink" },
+              { label: "Present", value: overall.present, color: "mint" },
+              { label: "Absent", value: overall.absent, color: "coral" },
+              { label: "Attendance", value: overall.percentage + "%", color: STATUS_COLOR[overallStatus] },
+            ].map((s, i) => (
+              <div key={i} className="rise bg-surface border border-brdr rounded-2xl px-4 py-3.5">
+                <div className={`num text-2xl font-semibold text-${s.color}`}>{s.value}</div>
+                <div className="text-xs text-dim mt-0.5">{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* TODAY */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display font-semibold">Today's Classes</h2>
+              <span className="text-xs text-faint">{fmtLong(todayISO())}</span>
+            </div>
+            {todayItems.length === 0 ? (
+              <div className="bg-surface border border-brdr rounded-2xl px-4 py-6 text-center text-sm text-dim">No classes scheduled for today. Enjoy the break, or check your timetable.</div>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {todayItems.map(item => <TodayClassCard key={item.id} item={item} records={records} dispatch={dispatch} />)}
+              </div>
+            )}
+          </div>
+
+          {belowTarget.length > 0 && (
+            <div className="rise mb-6 flex items-start gap-2.5 bg-amber/10 border border-amber/20 text-amber rounded-2xl px-4 py-3 text-sm">
+              <Icon name="alert" size={17} className="mt-0.5 shrink-0" />
+              <span>{belowTarget.length} subject{belowTarget.length===1?"":"s"} below target: {belowTarget.map(s=>s.name).join(", ")}.</span>
+            </div>
+          )}
+
+          {/* SUBJECTS */}
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-display font-semibold">Subjects</h2>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {subjects.map(s => <SubjectCard key={s.id} subject={s} records={records} onClick={() => openSubject(s.id)} />)}
+          </div>
+        </React.Fragment>
+      )}
+
+      <button onClick={() => setAddOpen(true)} className="sm:hidden fixed bottom-20 right-5 z-20 w-14 h-14 rounded-full bg-mint text-[#06140D] shadow-lg flex items-center justify-center active:scale-95">
+        <Icon name="plus" size={26} />
+      </button>
+    </div>
+  );
+}
+
+/* ============================== ADD / EDIT SUBJECT MODAL ============================== */
+const TARGET_PRESETS = [65,70,75,80,85,90];
+function AddSubjectModal({ open, onClose, editing }) {
+  const { dispatch } = useStore();
+  const blank = { name: "", code: "", faculty: "", targetPercentage: 75, classesPerWeek: 4, color: PALETTE[0], startDate: "", endDate: "" };
+  const [form, setForm] = useState(blank);
+  const [customTarget, setCustomTarget] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setForm(editing ? { ...blank, ...editing } : blank);
+      setCustomTarget(editing ? !TARGET_PRESETS.includes(editing.targetPercentage) : false);
+    }
+  }, [open, editing]);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const submit = (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    if (editing) {
+      dispatch({ type: "UPDATE_SUBJECT", payload: { ...form, id: editing.id, targetPercentage: Number(form.targetPercentage) || 75, classesPerWeek: Number(form.classesPerWeek) || 0 } });
+    } else {
+      dispatch({ type: "ADD_SUBJECT", payload: { id: uid(), createdAt: new Date().toISOString(), ...form, targetPercentage: Number(form.targetPercentage) || 75, classesPerWeek: Number(form.classesPerWeek) || 0 } });
+    }
+    onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} title={editing ? "Edit Subject" : "Add Subject"}>
+      <form onSubmit={submit}>
+        <Field label="Subject Name" required>
+          <input className={inputCls} value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Physics" autoFocus />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Subject Code"><input className={inputCls} value={form.code} onChange={e => set("code", e.target.value)} placeholder="PHY201" /></Field>
+          <Field label="Faculty Name"><input className={inputCls} value={form.faculty} onChange={e => set("faculty", e.target.value)} placeholder="Dr. Rao" /></Field>
+        </div>
+        <Field label="Target Attendance">
+          <div className="flex flex-wrap gap-2">
+            {TARGET_PRESETS.map(t => (
+              <button type="button" key={t} onClick={() => { set("targetPercentage", t); setCustomTarget(false); }}
+                className={`px-3 py-1.5 rounded-lg text-sm border ${!customTarget && Number(form.targetPercentage) === t ? "bg-mint/15 border-mint text-mint" : "border-brdr text-dim"}`}>{t}%</button>
+            ))}
+            <button type="button" onClick={() => setCustomTarget(true)} className={`px-3 py-1.5 rounded-lg text-sm border ${customTarget ? "bg-mint/15 border-mint text-mint" : "border-brdr text-dim"}`}>Custom</button>
+          </div>
+          {customTarget && <input type="number" min="1" max="100" className={inputCls + " mt-2"} value={form.targetPercentage} onChange={e => set("targetPercentage", e.target.value)} />}
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Classes Per Week"><input type="number" min="0" max="20" className={inputCls} value={form.classesPerWeek} onChange={e => set("classesPerWeek", e.target.value)} /></Field>
+          <Field label="Color">
+            <div className="flex flex-wrap gap-2 pt-1">
+              {PALETTE.map(c => (
+                <button type="button" key={c} onClick={() => set("color", c)} className="w-7 h-7 rounded-full border-2" style={{ background: c, borderColor: form.color === c ? "#fff" : "transparent" }} />
+              ))}
+            </div>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Start Date"><input type="date" className={inputCls} value={form.startDate} onChange={e => set("startDate", e.target.value)} /></Field>
+          <Field label="End Date"><input type="date" className={inputCls} value={form.endDate} onChange={e => set("endDate", e.target.value)} /></Field>
+        </div>
+        <div className="flex justify-end gap-2 mt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit">{editing ? "Save Changes" : "Add Subject"}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ============================== MARK ATTENDANCE MODAL ============================== */
+function MarkAttendanceModal({ open, onClose, subject, date }) {
+  const { state, dispatch } = useStore();
+  const existing = state.records.find(r => r.subjectId === subject?.id && r.date === date);
+  const [status, setStatus] = useState("present");
+  const [notes, setNotes] = useState("");
+  useEffect(() => { if (open) { setStatus(existing?.status || "present"); setNotes(existing?.notes || ""); } }, [open, existing]);
+  if (!subject) return null;
+  const save = () => { dispatch({ type: "MARK_ATTENDANCE", payload: { subjectId: subject.id, date, status, notes } }); onClose(); };
+  const del = () => { if (existing) dispatch({ type: "DELETE_RECORD", payload: existing.id }); onClose(); };
+  const options = [
+    { key: "present", label: "Present", color: "mint", icon: "check-circle" },
+    { key: "absent", label: "Absent", color: "coral", icon: "x-circle" },
+    { key: "no-class", label: "No Class", color: "slate", icon: "minus-circle" },
+  ];
+  return (
+    <Modal open={open} onClose={onClose} title={fmtLong(date)}>
+      <div className="mb-4 text-sm text-dim">{subject.name}</div>
+      <div className="flex flex-col gap-2 mb-4">
+        {options.map(o => (
+          <button key={o.key} onClick={() => setStatus(o.key)}
+            className={`flex items-center gap-3 rounded-xl px-3.5 py-3 border text-sm font-medium transition ${status === o.key ? `border-${o.color} bg-${o.color}/10 text-${o.color}` : "border-brdr text-dim"}`}>
+            <Icon name={o.icon} size={18} /> {o.label}
+          </button>
+        ))}
+      </div>
+      <Field label="Notes">
+        <textarea className={inputCls} rows="2" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
+      </Field>
+      <div className="flex justify-between gap-2 mt-2">
+        {existing ? <Button variant="danger" onClick={del}><Icon name="trash" size={14}/>Remove</Button> : <span/>}
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={save}>Save</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ============================== SUBJECT DETAIL ============================== */
+function AttendanceCalendar({ subject, records, onDayClick }) {
+  const [cursor, setCursor] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const recMap = useMemo(() => { const m = {}; records.forEach(r => { if (r.subjectId === subject.id) m[r.date] = r; }); return m; }, [records, subject.id]);
+  const first = new Date(cursor.y, cursor.m, 1);
+  const startOffset = first.getDay();
+  const total = daysInMonth(cursor.y, cursor.m);
+  const cells = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let d = 1; d <= total; d++) cells.push(d);
+  const move = (delta) => setCursor(c => { let m = c.m + delta, y = c.y; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } return { y, m }; });
+  const colorFor = (status) => status === "present" ? "mint" : status === "absent" ? "coral" : status === "no-class" ? "slate" : null;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <button onClick={() => move(-1)} className="p-1.5 text-dim hover:text-ink"><Icon name="chev-left" size={18}/></button>
+        <div className="font-display font-semibold text-sm">{MONTH_NAMES[cursor.m]} {cursor.y}</div>
+        <button onClick={() => move(1)} className="p-1.5 text-dim hover:text-ink"><Icon name="chev-right" size={18}/></button>
+      </div>
+      <div className="grid grid-cols-7 gap-1.5 mb-1.5">
+        {DAY_SHORT.map(d => <div key={d} className="text-center text-[11px] text-faint">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-1.5">
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} />;
+          const iso = `${cursor.y}-${pad2(cursor.m+1)}-${pad2(d)}`;
+          const rec = recMap[iso];
+          const color = colorFor(rec?.status);
+          const isFuture = iso > todayISO();
+          return (
+            <button key={i} disabled={isFuture} onClick={() => onDayClick(iso)}
+              className={`aspect-square rounded-lg text-xs flex items-center justify-center border transition
+                ${color ? `bg-${color}/15 border-${color}/40 text-${color}` : "border-brdr text-dim hover:border-faint"}
+                ${isFuture ? "opacity-30 cursor-not-allowed" : ""} ${iso === todayISO() ? "ring-1 ring-mint" : ""}`}>
+              {d}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-3 mt-4 text-xs text-dim">
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-mint inline-block"/>Present</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-coral inline-block"/>Absent</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate inline-block"/>No Class</span>
+      </div>
+    </div>
+  );
+}
+
+function SubjectDetail({ subjectId, onBack }) {
+  const { state, dispatch } = useStore();
+  const subject = state.subjects.find(s => s.id === subjectId);
+  const [tab, setTab] = useState("calendar");
+  const [markDate, setMarkDate] = useState(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [delOpen, setDelOpen] = useState(false);
+  if (!subject) return null;
+  const { stats, status, recs } = useSubjectStats(subjectId, state.records, subject.targetPercentage);
+  const color = STATUS_COLOR[status];
+
+  const monthly = useMemo(() => {
+    const buckets = {};
+    recs.forEach(r => { const key = r.date.slice(0,7); buckets[key] = buckets[key] || []; buckets[key].push(r); });
+    return Object.keys(buckets).sort().slice(-6).map(k => {
+      const st = computeStats(buckets[k]);
+      const d = fromISO(k + "-01");
+      return { month: MONTH_NAMES[d.getMonth()].slice(0,3), pct: st.percentage };
+    });
+  }, [recs]);
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 pb-24 sm:pb-10">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-dim hover:text-ink text-sm mb-4"><Icon name="arrow-left" size={16}/>Back</button>
+      <div className="flex items-start justify-between mb-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full" style={{ background: subject.color }} />
+            <h1 className="font-display text-xl font-semibold">{subject.name}</h1>
+          </div>
+          {subject.faculty && <div className="text-xs text-faint mt-1">{subject.faculty}{subject.code ? " · " + subject.code : ""}</div>}
+        </div>
+        <div className="flex gap-1.5">
+          <button onClick={() => setEditOpen(true)} className="p-2 rounded-lg bg-surface2 text-dim hover:text-ink"><Icon name="edit" size={16}/></button>
+          <button onClick={() => setDelOpen(true)} className="p-2 rounded-lg bg-coral/10 text-coral hover:bg-coral/20"><Icon name="trash" size={16}/></button>
+        </div>
+      </div>
+
+      <div className="bg-surface border border-brdr rounded-2xl p-5 mb-5 flex items-center gap-6">
+        <div className={`num text-4xl font-bold text-${color}`}>{stats.percentage}%</div>
+        <div className="flex-1">
+          <ProgressBar value={stats.percentage} colorVar={color} />
+          <div className="flex justify-between text-xs text-dim mt-2">
+            <span>{stats.present} Present · {stats.absent} Absent · {stats.total} Total</span>
+            <StatusPill status={status} />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-1 mb-5 bg-surface2 rounded-xl p-1 w-fit">
+        {["calendar","statistics"].map(t => (
+          <button key={t} onClick={() => setTab(t)} className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize ${tab === t ? "bg-surface text-ink" : "text-dim"}`}>{t}</button>
+        ))}
+      </div>
+
+      {tab === "calendar" ? (
+        <div className="bg-surface border border-brdr rounded-2xl p-5">
+          <AttendanceCalendar subject={subject} records={state.records} onDayClick={setMarkDate} />
+        </div>
+      ) : (
+        <div className="flex flex-col gap-5">
+          <div className="bg-surface border border-brdr rounded-2xl p-5">
+            <div className="font-display font-semibold text-sm mb-3">Last {monthly.length} Months</div>
+            {monthly.length === 0 ? <div className="text-sm text-dim">No data yet.</div> : (
+              <div style={{ width: "100%", height: 180 }}>
+                <ResponsiveContainer>
+                  <BarChart data={monthly}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#232935" vertical={false} />
+                    <XAxis dataKey="month" stroke="#5B6376" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#5B6376" fontSize={12} tickLine={false} axisLine={false} width={34} domain={[0,100]} />
+                    <Tooltip contentStyle={{ background: "#171C25", border: "1px solid #232935", borderRadius: 10, fontSize: 12 }} />
+                    <Bar dataKey="pct" fill={subject.color} radius={[6,6,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+          <div className="bg-surface border border-brdr rounded-2xl p-5">
+            <div className="font-display font-semibold text-sm mb-2">Insight</div>
+            <p className="text-sm text-dim leading-relaxed">{insightMessage(stats, subject.targetPercentage)}</p>
+          </div>
+        </div>
+      )}
+
+      <MarkAttendanceModal open={!!markDate} onClose={() => setMarkDate(null)} subject={subject} date={markDate} />
+      <AddSubjectModal open={editOpen} onClose={() => setEditOpen(false)} editing={subject} />
+      <ConfirmDialog open={delOpen} onCancel={() => setDelOpen(false)} danger confirmLabel="Delete Subject"
+        title="Delete this subject?" body={`This will permanently remove ${subject.name} and all its attendance records.`}
+        onConfirm={() => { dispatch({ type: "DELETE_SUBJECT", payload: subject.id }); setDelOpen(false); onBack(); }} />
+    </div>
+  );
+}
+
+/* ============================== ATTENDANCE / HISTORY PAGE ============================== */
+function AttendancePage() {
+  const { state, dispatch } = useStore();
+  const { subjects, records } = state;
+  const [filterSubject, setFilterSubject] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [markCtx, setMarkCtx] = useState(null);
+
+  const todayName = dayOfWeekName(todayISO());
+  const todayItems = useMemo(() => state.timetable
+    .filter(t => t.day === todayName)
+    .map(t => ({ ...t, subject: subjects.find(s => s.id === t.subjectId) }))
+    .filter(t => t.subject)
+    .sort((a,b) => a.startTime.localeCompare(b.startTime)), [state.timetable, subjects, todayName]);
+
+  const filtered = useMemo(() => {
+    return records
+      .filter(r => filterSubject === "all" || r.subjectId === filterSubject)
+      .filter(r => filterStatus === "all" || r.status === filterStatus)
+      .sort((a,b) => b.date.localeCompare(a.date));
+  }, [records, filterSubject, filterStatus]);
+
+  const grouped = useMemo(() => {
+    const g = {};
+    filtered.forEach(r => { g[r.date] = g[r.date] || []; g[r.date].push(r); });
+    return Object.entries(g);
+  }, [filtered]);
+
+  const subjName = (id) => subjects.find(s => s.id === id)?.name || "—";
+  const subjColor = (id) => subjects.find(s => s.id === id)?.color || "#8B93A6";
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 pb-24 sm:pb-10">
+      <h1 className="font-display text-xl font-semibold mb-1">Attendance</h1>
+      <p className="text-dim text-sm mb-5">Mark today's classes and review your history.</p>
+
+      {subjects.length === 0 ? (
+        <EmptyState icon="check-square" title="No subjects yet" subtitle="Add a subject first to start marking attendance." />
+      ) : (
+        <React.Fragment>
+          <div className="mb-6">
+            <div className="font-display font-semibold text-sm mb-3">Today's Classes</div>
+            {todayItems.length === 0 ? (
+              <div className="bg-surface border border-brdr rounded-2xl px-4 py-6 text-center text-sm text-dim">No classes today.</div>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {todayItems.map(item => <TodayClassCard key={item.id} item={{ ...item, subjectName: item.subject.name, subjectColor: item.subject.color }} records={records} dispatch={dispatch} />)}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 mb-4">
+            <select className={inputCls + " w-auto"} value={filterSubject} onChange={e => setFilterSubject(e.target.value)}>
+              <option value="all">All Subjects</option>
+              {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <select className={inputCls + " w-auto"} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+              <option value="all">All Status</option>
+              <option value="present">Present</option>
+              <option value="absent">Absent</option>
+              <option value="no-class">No Class</option>
+            </select>
+          </div>
+
+          <div className="font-display font-semibold text-sm mb-3">History</div>
+          {grouped.length === 0 ? (
+            <div className="text-sm text-dim py-8 text-center">No attendance recorded yet.</div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {grouped.map(([date, recs]) => (
+                <div key={date}>
+                  <div className="text-xs text-faint mb-2">{fmtLong(date)}</div>
+                  <div className="flex flex-col gap-2">
+                    {recs.map(r => (
+                      <button key={r.id} onClick={() => setMarkCtx({ subject: subjects.find(s=>s.id===r.subjectId), date: r.date })}
+                        className="flex items-center justify-between bg-surface border border-brdr rounded-xl px-4 py-2.5 text-left hover:border-faint">
+                        <span className="flex items-center gap-2.5 text-sm font-medium">
+                          <span className="w-2 h-2 rounded-full" style={{ background: subjColor(r.subjectId) }} />
+                          {subjName(r.subjectId)}
+                        </span>
+                        <StatusPill status={r.status === "present" ? "safe" : r.status === "absent" ? "critical" : "nodata"} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </React.Fragment>
+      )}
+      <MarkAttendanceModal open={!!markCtx} onClose={() => setMarkCtx(null)} subject={markCtx?.subject} date={markCtx?.date} />
+    </div>
+  );
+}
+
+/* ============================== TIMETABLE ============================== */
+function TimetableModal({ open, onClose, editing }) {
+  const { state, dispatch } = useStore();
+  const blank = { subjectId: state.subjects[0]?.id || "", day: "Monday", startTime: "09:00", endTime: "10:00", room: "" };
+  const [form, setForm] = useState(blank);
+  useEffect(() => { if (open) setForm(editing ? { ...blank, ...editing } : blank); }, [open, editing]);
+  const set = (k,v) => setForm(f => ({ ...f, [k]: v }));
+  const submit = (e) => {
+    e.preventDefault();
+    if (!form.subjectId) return;
+    if (editing) dispatch({ type: "UPDATE_TIMETABLE", payload: { ...form, id: editing.id } });
+    else dispatch({ type: "ADD_TIMETABLE", payload: { ...form, id: uid() } });
+    onClose();
+  };
+  const del = () => { if (editing) dispatch({ type: "DELETE_TIMETABLE", payload: editing.id }); onClose(); };
+  return (
+    <Modal open={open} onClose={onClose} title={editing ? "Edit Class" : "Add Class"}>
+      <form onSubmit={submit}>
+        <Field label="Subject" required>
+          <select className={inputCls} value={form.subjectId} onChange={e => set("subjectId", e.target.value)}>
+            {state.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Day" required>
+          <select className={inputCls} value={form.day} onChange={e => set("day", e.target.value)}>
+            {DAY_NAMES_LONG.filter(d => d !== "Sunday").map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Start Time"><input type="time" className={inputCls} value={form.startTime} onChange={e => set("startTime", e.target.value)} /></Field>
+          <Field label="End Time"><input type="time" className={inputCls} value={form.endTime} onChange={e => set("endTime", e.target.value)} /></Field>
+        </div>
+        <Field label="Room"><input className={inputCls} value={form.room} onChange={e => set("room", e.target.value)} placeholder="e.g. Room 204" /></Field>
+        <div className="flex justify-between gap-2 mt-2">
+          {editing ? <Button type="button" variant="danger" onClick={del}><Icon name="trash" size={14}/>Delete</Button> : <span/>}
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit">{editing ? "Save" : "Add Class"}</Button>
+          </div>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+function TimetablePage() {
+  const { state } = useStore();
+  const days = DAY_NAMES_LONG.filter(d => d !== "Sunday");
+  const [modal, setModal] = useState(null);
+  const subjById = (id) => state.subjects.find(s => s.id === id);
+  const byDay = (day) => state.timetable.filter(t => t.day === day && subjById(t.subjectId)).sort((a,b) => a.startTime.localeCompare(b.startTime));
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-24 sm:pb-10">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h1 className="font-display text-xl font-semibold">Timetable</h1>
+          <p className="text-dim text-sm">Your weekly class schedule.</p>
+        </div>
+        {state.subjects.length > 0 && <Button onClick={() => setModal({})}><Icon name="plus" size={15}/>Add Class</Button>}
+      </div>
+      {state.subjects.length === 0 ? (
+        <EmptyState icon="grid" title="Add a subject first" subtitle="You need at least one subject before building a timetable." />
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {days.map(day => (
+            <div key={day} className="bg-surface border border-brdr rounded-2xl p-4">
+              <div className="font-display font-semibold text-sm mb-3">{day}</div>
+              {byDay(day).length === 0 ? (
+                <div className="text-xs text-faint py-4 text-center">No classes</div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {byDay(day).map(t => {
+                    const s = subjById(t.subjectId);
+                    return (
+                      <button key={t.id} onClick={() => setModal(t)} className="text-left rounded-xl px-3 py-2.5 border border-brdr hover:border-faint">
+                        <div className="flex items-center gap-2 text-sm font-medium"><span className="w-2 h-2 rounded-full" style={{background:s.color}}/>{s.name}</div>
+                        <div className="text-xs text-faint mt-0.5">{t.startTime} – {t.endTime}{t.room ? " · " + t.room : ""}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <TimetableModal open={!!modal} onClose={() => setModal(null)} editing={modal && modal.id ? modal : null} />
+    </div>
+  );
+}
+
+/* ============================== ANALYTICS ============================== */
+function AnalyticsPage() {
+  const { state } = useStore();
+  const { subjects, records, settings } = state;
+  const [subjFilter, setSubjFilter] = useState("overall");
+  const [range, setRange] = useState(6);
+
+  const overall = computeStats(records);
+  const overallStatus = getStatus(overall, settings.defaultTarget);
+
+  const counts = useMemo(() => {
+    let safe=0, risky=0, critical=0;
+    subjects.forEach(s => {
+      const st = computeStats(records.filter(r => r.subjectId === s.id));
+      const status = getStatus(st, s.targetPercentage);
+      if (status === "safe") safe++; else if (status === "risky") risky++; else if (status === "critical") critical++;
+    });
+    return { safe, risky, critical };
+  }, [subjects, records]);
+
+  const chartData = useMemo(() => {
+    const relevant = subjFilter === "overall" ? records : records.filter(r => r.subjectId === subjFilter);
+    const buckets = {};
+    relevant.forEach(r => { const k = r.date.slice(0,7); buckets[k] = buckets[k] || []; buckets[k].push(r); });
+    return Object.keys(buckets).sort().slice(-range).map(k => {
+      const st = computeStats(buckets[k]);
+      const d = fromISO(k + "-01");
+      return { month: MONTH_NAMES[d.getMonth()].slice(0,3) + " " + String(d.getFullYear()).slice(2), pct: st.percentage };
+    });
+  }, [records, subjFilter, range]);
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-24 sm:pb-10">
+      <h1 className="font-display text-xl font-semibold mb-1">Analytics</h1>
+      <p className="text-dim text-sm mb-5">Deep dive into your attendance trends.</p>
+
+      {subjects.length === 0 ? (
+        <EmptyState icon="bar" title="Nothing to analyze yet" subtitle="Add subjects and mark attendance to see analytics here." />
+      ) : (
+        <React.Fragment>
+          <div className="bg-surface border border-brdr rounded-2xl p-5 mb-5 flex items-center gap-6">
+            <div className={`num text-4xl font-bold text-${STATUS_COLOR[overallStatus]}`}>{overall.percentage}%</div>
+            <div>
+              <div className="text-dim text-sm">Overall Attendance</div>
+              <div className="text-xs text-faint mt-1">{overall.present} present of {overall.total} classes conducted</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="bg-coral/10 border border-coral/20 rounded-2xl px-4 py-3.5 text-center">
+              <div className="num text-2xl font-semibold text-coral">{counts.critical}</div>
+              <div className="text-xs text-coral/80 mt-0.5">Critical</div>
+            </div>
+            <div className="bg-amber/10 border border-amber/20 rounded-2xl px-4 py-3.5 text-center">
+              <div className="num text-2xl font-semibold text-amber">{counts.risky}</div>
+              <div className="text-xs text-amber/80 mt-0.5">Risky</div>
+            </div>
+            <div className="bg-mint/10 border border-mint/20 rounded-2xl px-4 py-3.5 text-center">
+              <div className="num text-2xl font-semibold text-mint">{counts.safe}</div>
+              <div className="text-xs text-mint/80 mt-0.5">Safe</div>
+            </div>
+          </div>
+
+          <div className="bg-surface border border-brdr rounded-2xl p-5 mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div className="font-display font-semibold text-sm">Monthly Trend</div>
+              <div className="flex gap-2">
+                <select className={inputCls + " w-auto text-xs py-1.5"} value={subjFilter} onChange={e => setSubjFilter(e.target.value)}>
+                  <option value="overall">Overall</option>
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <select className={inputCls + " w-auto text-xs py-1.5"} value={range} onChange={e => setRange(Number(e.target.value))}>
+                  <option value={1}>1 Month</option>
+                  <option value={3}>3 Months</option>
+                  <option value={6}>6 Months</option>
+                  <option value={12}>Academic Year</option>
+                </select>
+              </div>
+            </div>
+            {chartData.length === 0 ? <div className="text-sm text-dim py-8 text-center">No data for this range.</div> : (
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#232935" vertical={false} />
+                    <XAxis dataKey="month" stroke="#5B6376" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#5B6376" fontSize={12} tickLine={false} axisLine={false} width={34} domain={[0,100]} />
+                    <Tooltip contentStyle={{ background: "#171C25", border: "1px solid #232935", borderRadius: 10, fontSize: 12 }} />
+                    <Line type="monotone" dataKey="pct" stroke="#5FE3A1" strokeWidth={2.5} dot={{ r: 3, fill: "#5FE3A1" }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          <div className="font-display font-semibold text-sm mb-3">Subject Analysis</div>
+          <div className="flex flex-col gap-3">
+            {subjects.map(s => {
+              const st = computeStats(records.filter(r => r.subjectId === s.id));
+              const status = getStatus(st, s.targetPercentage);
+              const color = STATUS_COLOR[status];
+              const need = status === "safe" ? null : neededToAttend(st.present, st.total, s.targetPercentage);
+              return (
+                <div key={s.id} className="bg-surface border border-brdr rounded-2xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="flex items-center gap-2 font-medium text-sm"><span className="w-2 h-2 rounded-full" style={{background:s.color}}/>{s.name}</span>
+                    <span className={`num font-semibold text-${color}`}>{st.percentage}%</span>
+                  </div>
+                  <ProgressBar value={st.percentage} colorVar={color} />
+                  <div className="flex items-center justify-between text-xs text-dim mt-2">
+                    <span>Present: {st.present} · Absent: {st.absent} · Total: {st.total}</span>
+                    <StatusPill status={status} />
+                  </div>
+                  <div className="text-xs text-faint mt-1.5">Target: {s.targetPercentage}%{need ? ` · Need: ${need} more class${need===1?"":"es"}` : ""}</div>
+                </div>
+              );
+            })}
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+/* ============================== EXPORT ============================== */
+function toCSV(subjects, records) {
+  const header = ["Subject","Code","Date","Status","Notes"];
+  const rows = records.map(r => {
+    const s = subjects.find(x => x.id === r.subjectId);
+    return [s?.name || "", s?.code || "", r.date, r.status, (r.notes||"").replace(/,/g," ")];
+  });
+  return [header, ...rows].map(row => row.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+}
+function downloadFile(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+function openPrintReport(subjects, records, settings) {
+  const rows = subjects.map(s => {
+    const st = computeStats(records.filter(r => r.subjectId === s.id));
+    const status = STATUS_LABEL[getStatus(st, s.targetPercentage)];
+    return `<tr><td>${s.name}</td><td>${st.present}</td><td>${st.absent}</td><td>${st.total}</td><td>${st.percentage}%</td><td>${s.targetPercentage}%</td><td>${status}</td></tr>`;
+  }).join("");
+  const html = `<!DOCTYPE html><html><head><title>Attendance Report</title>
+  <style>body{font-family:Arial,sans-serif;padding:32px;color:#111} h1{margin-bottom:4px} table{width:100%;border-collapse:collapse;margin-top:20px} th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:13px} th{background:#f2f2f2}</style>
+  </head><body><h1>Attendance Report</h1><p>Academic Year: ${settings.academicYear}</p>
+  <table><thead><tr><th>Subject</th><th>Present</th><th>Absent</th><th>Total</th><th>Attendance %</th><th>Target %</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
+  <script>window.onload=()=>window.print()<\/script></body></html>`;
+  const w = window.open("", "_blank");
+  w.document.write(html); w.document.close();
+}
+function ExportModal({ open, onClose }) {
+  const { state } = useStore();
+  const opts = [
+    { key: "pdf", label: "PDF Report", desc: "Printable summary report", icon: "book" },
+    { key: "excel", label: "Excel Spreadsheet", desc: "Detailed records (.csv, opens in Excel)", icon: "grid" },
+    { key: "csv", label: "CSV", desc: "Raw attendance records", icon: "download" },
+  ];
+  const run = (key) => {
+    if (key === "pdf") openPrintReport(state.subjects, state.records, state.settings);
+    else if (key === "csv") downloadFile(toCSV(state.subjects, state.records), "attendance_records.csv", "text/csv");
+    else downloadFile(toCSV(state.subjects, state.records), "attendance_records.xls.csv", "application/vnd.ms-excel");
+    onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Export Attendance">
+      <div className="flex flex-col gap-2">
+        {opts.map(o => (
+          <button key={o.key} onClick={() => run(o.key)} className="flex items-center gap-3 rounded-xl border border-brdr px-4 py-3 hover:border-faint text-left">
+            <div className="w-9 h-9 rounded-lg bg-surface2 flex items-center justify-center text-mint"><Icon name={o.icon} size={17}/></div>
+            <div><div className="text-sm font-medium">{o.label}</div><div className="text-xs text-faint">{o.desc}</div></div>
+          </button>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+/* ============================== SETTINGS ============================== */
+function SettingsPage() {
+  const { state, dispatch } = useStore();
+  const { settings, subjects, records, timetable, hasDemo } = state;
+  const [exportOpen, setExportOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const fileRef = useRef(null);
+
+  const importFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.subjects && data.records) dispatch({ type: "IMPORT", payload: data });
+      } catch (err) { alert("Invalid file"); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+  const exportJSON = () => downloadFile(JSON.stringify({ subjects, records, timetable, settings }, null, 2), "attendly_backup.json", "application/json");
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 pt-6 pb-24 sm:pb-10">
+      <h1 className="font-display text-xl font-semibold mb-1">Settings</h1>
+      <p className="text-dim text-sm mb-6">Manage your preferences and data.</p>
+
+      <SectionTitle>Appearance</SectionTitle>
+      <SettingsRow label="Theme">
+        <div className="flex gap-1 bg-surface2 rounded-lg p-1">
+          {[{k:"dark",i:"moon"},{k:"light",i:"sun"},{k:"system",i:"gear"}].map(o => (
+            <button key={o.k} onClick={() => dispatch({ type: "UPDATE_SETTINGS", payload: { theme: o.k } })}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1 capitalize ${settings.theme===o.k ? "bg-surface text-ink" : "text-dim"}`}>
+              <Icon name={o.i} size={13}/>{o.k}
+            </button>
+          ))}
+        </div>
+      </SettingsRow>
+
+      <SectionTitle>Attendance</SectionTitle>
+      <SettingsRow label="Default Target Attendance">
+        <select className={inputCls + " w-24 text-sm py-1.5"} value={settings.defaultTarget} onChange={e => dispatch({ type: "UPDATE_SETTINGS", payload: { defaultTarget: Number(e.target.value) } })}>
+          {TARGET_PRESETS.map(t => <option key={t} value={t}>{t}%</option>)}
+        </select>
+      </SettingsRow>
+
+      <SectionTitle>Notifications</SectionTitle>
+      <SettingsRow label="Attendance Reminders"><Toggle value={settings.reminders} onChange={v => dispatch({ type: "UPDATE_SETTINGS", payload: { reminders: v } })} /></SettingsRow>
+      <SettingsRow label="Low Attendance Alerts"><Toggle value={settings.lowAttendanceAlerts} onChange={v => dispatch({ type: "UPDATE_SETTINGS", payload: { lowAttendanceAlerts: v } })} /></SettingsRow>
+
+      <SectionTitle>Academic Year</SectionTitle>
+      <SettingsRow label="Current Academic Year">
+        <input className={inputCls + " w-40 text-sm py-1.5"} value={settings.academicYear} onChange={e => dispatch({ type: "UPDATE_SETTINGS", payload: { academicYear: e.target.value } })} />
+      </SettingsRow>
+
+      <SectionTitle>Data Management</SectionTitle>
+      <div className="flex flex-col gap-2 mb-6">
+        <Button variant="secondary" onClick={() => setExportOpen(true)}><Icon name="download" size={15}/>Export Data</Button>
+        <Button variant="secondary" onClick={() => fileRef.current.click()}><Icon name="upload" size={15}/>Import Data</Button>
+        <input type="file" ref={fileRef} accept="application/json" className="hidden" onChange={importFile} />
+        <Button variant="secondary" onClick={exportJSON}><Icon name="download" size={15}/>Backup as JSON</Button>
+        {hasDemo ? (
+          <Button variant="secondary" onClick={() => dispatch({ type: "CLEAR_DEMO" })}><Icon name="refresh" size={15}/>Clear Demo Data</Button>
+        ) : (
+          <Button variant="secondary" onClick={() => dispatch({ type: "LOAD_DEMO" })}><Icon name="refresh" size={15}/>Load Demo Data</Button>
+        )}
+        <Button variant="danger" onClick={() => setResetOpen(true)}><Icon name="trash" size={15}/>Reset All Data</Button>
+      </div>
+
+      <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
+      <ConfirmDialog open={resetOpen} onCancel={() => setResetOpen(false)} danger confirmLabel="Reset Everything"
+        title="Reset all data?" body="This permanently deletes all subjects, attendance records, and timetable entries. This cannot be undone."
+        onConfirm={() => { dispatch({ type: "RESET_ALL" }); setResetOpen(false); }} />
+    </div>
+  );
+}
+function SectionTitle({ children }) { return <div className="text-xs font-semibold text-faint uppercase tracking-wide mb-2.5 mt-6 first:mt-0">{children}</div>; }
+function SettingsRow({ label, children }) {
+  return (
+    <div className="flex items-center justify-between bg-surface border border-brdr rounded-xl px-4 py-3 mb-2">
+      <span className="text-sm">{label}</span>
+      {children}
+    </div>
+  );
+}
+function Toggle({ value, onChange }) {
+  return (
+    <button onClick={() => onChange(!value)} className={`w-11 h-6 rounded-full transition relative ${value ? "bg-mint" : "bg-surface2 border border-brdr"}`}>
+      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${value ? "left-5" : "left-0.5"}`} />
+    </button>
+  );
+}
+
+/* ============================== ROOT APP ============================== */
+function App() {
+  const [state, dispatch] = useReducer(reducer, null, () => loadState() || emptyState());
+  const [page, setPage] = useState("dashboard");
+  const [subjectId, setSubjectId] = useState(null);
+  const [addOpen, setAddOpen] = useState(false);
+
+  useEffect(() => { persist(state); }, [state]);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (state.settings.theme === "light") root.classList.add("theme-light"); else root.classList.remove("theme-light");
+  }, [state.settings.theme]);
+
+  const openSubject = (id) => setSubjectId(id);
+  const goto = (p) => { setPage(p); setSubjectId(null); };
+
+  let content;
+  if (subjectId) content = <SubjectDetail subjectId={subjectId} onBack={() => setSubjectId(null)} />;
+  else if (page === "dashboard") content = <Dashboard openSubject={openSubject} setAddOpen={setAddOpen} />;
+  else if (page === "attendance") content = <AttendancePage />;
+  else if (page === "timetable") content = <TimetablePage />;
+  else if (page === "analytics") content = <AnalyticsPage />;
+  else content = <SettingsPage />;
+
+  return (
+    <Store.Provider value={{ state, dispatch }}>
+      <div className="min-h-screen bg-bg text-ink">
+        <Sidebar page={page} setPage={goto} />
+        <div className="sm:ml-60">{content}</div>
+        <BottomNav page={page} setPage={goto} />
+        <AddSubjectModal open={addOpen} onClose={() => setAddOpen(false)} />
+      </div>
+    </Store.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
